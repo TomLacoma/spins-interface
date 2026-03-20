@@ -1,5 +1,5 @@
 # spins-interface
-Software for the SPINS project (interactive NMR spectrometer prototype)
+Software for the SPINS project (interactive NMR spectrometer prototype). 
 See following link for the prototyping part of the project : https://wiki.fablab.sorbonne-universite.fr/BookStack/books/smart-prototype-of-an-interactive-nmr-spectrometer-spins
 
 # Installation 
