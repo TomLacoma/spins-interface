@@ -12,7 +12,7 @@ def ret_none():
 
 class Spins(Sim):
     """Handles a spins population in a constant magnetic field"""
-    def __init__(self, x_coords, y_coords, z_coords, sim, phase = lambda x:0, peaks = None, temperature = 298, frequency = 300e6):
+    def __init__(self, x_coords, y_coords, z_coords, sim, phase = lambda x:0, mana = None, temperature = 298, frequency = 300e6):
         """
         Handles a spin population and its updating over time using custom evolution functions
         Precomputes values.  
@@ -23,7 +23,7 @@ class Spins(Sim):
         :param list z_coords: list of z positions for the vectors anchors
         :param Sim sim: instance of Sim object to get all the timings and states from, see animation.py
         :param function phase: function returning the phase of a vector given its index i
-        :param list peaks: list of the chemical shifts of the protons included in the simulation (in ppm) 
+        :param list mana: list in the form [[chemical shift, multiplicity, coupling constant],...] with values being [float, int, float] (Multiplet ANAlysis)
         :param dict pars: dictionary of optional parameters for the vectors precession frequency, equilibrium angle, magnitude
         """
 
@@ -41,20 +41,31 @@ class Spins(Sim):
         self.n_z = len(z_coords) if not type(z_coords)==int else 1
         self.count = self.n_x*self.n_y*self.n_z
 
-        #Computes the Boltzmann populations for the two states (alligned, 0 and antialligned, 1)
+        #Computes the Boltzmann populations for the two states (alligned, low, 0 and antialligned, high, 1)
         #of a proton in a magnetic field
         self.weights = [0.5+np.exp((-6.63e-34*frequency)/1.38e-23*temperature), 0.5-np.exp((-6.63e-34*frequency)/1.38e-23*temperature)]
         #Randomly choose the protons spins states from the Boltzmann distribution
         self.states = random.choices([0,1], weights=self.weights, k=self.count)
         #The proton to be flipped, must be alligned (state 0)
-        self.flippable = self.states.index(0)
+        self.flippable = random.choice([i for i,x in enumerate(self.states) if x==0])
+        self.flippable_color, self.color = None, None
+        self.recolor("royalblue", "darkred")
+
+        self.quiver_color = [self.color for i in range(self.count)]
+        self.quiver_color[self.flippable] = self.flippable_color
 
         #Mesh of the x,y,z coordinates of protons
         self.x, self.y, self.z = np.meshgrid(x_coords, y_coords, z_coords)
 
+        #Computes the atoms coordinates in the energy level visualization where all atoms are plotted at y=0
+        self.ex = [-3+0.3*i for i in range(self.count)]
+        self.ey = [0 for i in self.ex]
+        self.ez = [2*i-1 for i in self.states]
+
         #Individual phase of each proton 
         self.phases = [phase(i) for i in range(self.count)]
-        self.peaks = np.array([2, 4]) if not peaks else peaks
+        self.mana = np.array([[2.5, 5, 0.1]]) if not mana else mana
+        self.peaks = self.mana[:][0]
         #Defines protons precession frequencies based upon the peaks list content
         self.freq = [self.pars["f"]*(1+1e-6*self.peaks[i%len(self.peaks)]) for i in range(self.count)]
 
@@ -75,7 +86,7 @@ class Spins(Sim):
         """
         u = self.pars["mag"]*np.sin(2*np.pi*f*t + phi)*np.sin(np.pi*self.pars["angle"]/180)
         v = self.pars["mag"]*np.cos(2*np.pi*f*t + phi)*np.sin(np.pi*self.pars["angle"]/180)
-        w = (2*state-1)*self.pars["mag"]*np.cos(np.pi*self.pars["angle"]/180)
+        w = (1-2*state)*self.pars["mag"]*np.cos(np.pi*self.pars["angle"]/180)
         return(np.array([u, v, w]))
 
 
@@ -100,23 +111,40 @@ class Spins(Sim):
         for i in range(self.count):
             self.spins[i] = self.updater(t, self.freq[i], self.phases[i], self.states[i])
 
-
+    def recolor(self, ambient, f_color):
+        """
+        Recolors the spins with the ambient color, while the flippable spin becomes f_color
+        """
+        self.color = ambient
+        self.flippable_color = f_color
+        self.quiver_color = [self.color for i in range(self.count)]
+        self.quiver_color[self.flippable] = self.flippable_color
 
     def to_quiver(self):
-        """Returns 6 lists containing the X, Y, Z, U, V, W components of each spin to pass to quiver functions"""
+        """Returns 6 lists containing the X, Y, Z, U, V, W components of each spin to pass to quiver functions in spins visualiation"""
         u = np.array([i[0] for i in self.spins]).reshape(np.shape(self.x))
         v = np.array([i[1] for i in self.spins]).reshape(np.shape(self.y))
         w = np.array([i[2] for i in self.spins]).reshape(np.shape(self.z))
         return(self.x, self.y, self.z, u, v, w)
+
+    def to_energy_quiver(self):
+        """Returns 6 lists containing the X, Y, Z, U, V, W components of each spin to pass to quiver functions in energy visualization"""
+        u = np.array([i[0] for i in self.spins])
+        v = np.array([i[1] for i in self.spins])
+        w = np.array([i[2] for i in self.spins])
+        return(self.ex, self.ey, self.ez, u, v, w)
+
 
     def pulse(self):
         """Mimicks an NMR pulse, flips the flippable spins"""
         if self.sim.pulsed:
             self.sim.pulsed = False
             self.states[self.flippable] = 0
+            self.ez[self.flippable] = -1
         else: 
             self.sim.pulsed = True
             self.states[self.flippable] = 1
+            self.ez[self.flippable] = 1
     
     def lift(self):
         """Gets the sample out of the magnet, leading to no signal"""
@@ -226,9 +254,9 @@ class DispState:
             raise(ValueError)
         
 
-        self.states_3d = ["spins", "mag"]
+        self.states_3d = ["spins", "energy", "mag"]
         self.states_2d = ["fid", "ft"]
-        self.st_dict = {"spins":"Spins dans champs magnétique", "mag":"Aimantation totale", "fid":"Signal enregistré", "ft":"Spectre"}
+        self.st_dict = {"spins":"Spins dans champs magnétique", "energy":"Niveaux énergétiques des spins", "mag":"Aimantation totale", "fid":"Signal enregistré", "ft":"Spectre"}
         
 
     def is_2d(self):

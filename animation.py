@@ -30,6 +30,7 @@ class Sim:
         self.paused = False #Turns at True if the simulation is paused
         self.pulsed = False #Turns True if sample has been submitted to a pulse
         self.lifted = False #Turns true if the tube is removed from the magnet
+        self.flashed = False
 
         self.flags = [] #General purpose fkags, will be cleaned at the beggining of the next frame
 
